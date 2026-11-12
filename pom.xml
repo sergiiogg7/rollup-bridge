@@ -17,6 +17,7 @@
     <module>services/testkit</module>
     <module>services/app</module>
     <module>services/e2e</module>
+    <module>services/dispute</module>
   </modules>
 
   <properties>
