@@ -26,6 +26,7 @@ Three mechanisms feed it:
 | `bridge_challenge_window_seconds` | the window configured on the oracle (so alert thresholds are fractions of it) |
 | `bridge_cursor_lag_blocks{chain}` | chain head minus the block up to which a relayer has scanned |
 | `bridge_chain_head_block{chain}`, `bridge_l1_paused` | heads; 1 if the bridge is paused |
+| `bridge_deposit_reorged_after_mint_total` | ticks on which an already minted deposit was seen in another L1 block |
 | `bridge_service_errors_total{service,reason}` | reasons: `rpc_transport`, `rpc_error`, `tx_reverted`, `tx_timeout`, `state_machine`, `internal` (never a message or an id: cardinality stays fixed) |
 | `bridge_service_ticks_total{service,outcome}`, `bridge_service_last_success_timestamp_seconds{service}`, `bridge_service_tick_duration_seconds` | liveness of each loop |
 | `bridge_transactions_total{service,op,outcome}` | transactions by operation and outcome (`ok`, `failed`, `error`) |
@@ -36,6 +37,7 @@ Three mechanisms feed it:
 |---|---|---|
 | `OutputWindowClosingUnchecked` | an unchecked output has less than half of the challenge window left | the one that matters: a wrong output nobody looked at is about to become final |
 | `ChallengerDown` | no challenger tick for 30 s, or no challenger series at all | without a challenger nothing can be disputed |
+| `UnbackedMintSuspected` | a deposit already minted on L2 shows up in another L1 block | the deposit-id-reuse residual risk in `THREAT-MODEL.md` |
 | `OutputChallenged`, `BridgePaused` | an output awaits the guardian; the bridge is paused | operator attention |
 | `TargetDown`, `ServiceStalled` | a target cannot be scraped; a service has not completed a tick for a minute | liveness |
 | `CursorStalled` | a scan cursor is more than 25 blocks behind its head for a minute | a healthy relayer sets its cursor to the head every tick |
@@ -45,7 +47,7 @@ Three mechanisms feed it:
 Thresholds are tuned for the lab (120 s window, 1 s polling). Those that depend on the window are expressed as a fraction of `bridge_challenge_window_seconds`, so they carry over to a 7-day window. `monitoring/tests/alerts.test.yml` unit-tests every rule with `promtool test rules` (one firing case each; the thresholds also have quiet cases):
 
 ```text
-$ promtool check rules monitoring/alerts.yml     SUCCESS: 9 rules found
+$ promtool check rules monitoring/alerts.yml     SUCCESS: 10 rules found
 $ promtool test rules monitoring/tests/alerts.test.yml    SUCCESS
 ```
 

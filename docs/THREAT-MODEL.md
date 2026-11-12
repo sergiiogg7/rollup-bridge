@@ -50,7 +50,7 @@ Educational project, not audited. This document states what the design assumes, 
 | A14 | Deposit caps exceeded | caps | `test_attack_depositCapAndTotalLockedExceeded` |
 | A15 | Unbacked mint on L2 (bad relayer) drains L1 | `amount <= totalLocked` | `test_attack_unbackedL2MintCannotPayMoreThanLocked` |
 | A16 | **L1 reorg after the relayer minted at depth 0** | confirmations + canonical hash re-check | E6 unsafe (asserts the loss) vs E6 safe |
-| A17 | Reorg removes `proposeOutput` / `prove` transactions | services derive state from the chain, not from memory | E7 |
+| A17 | Reorg removes `proposeOutput` / `prove` / `challenge` / `finalize` transactions | services derive state from the chain, not from memory; the challenger and the withdrawal relayer redo a step whose transaction vanished | E7, `ReorgResilienceTest`, `ChaosPropertyTest` (1000 random scripts) |
 | A18 | Relayer or proposer crashes between a transaction and its bookkeeping | reconcile with the chain first; persisted intent markers | E5, E5b, E8, crash test in `DepositScenariosTest` |
 | A19 | Malicious challenger griefs honest outputs | bond lost when the guardian rules against it | E4 |
 | A20 | Silent guardian | `expireChallenge` fails safe (delete + refund), owner can replace the guardian | `unresponsiveGuardianChallengeExpires`, `ownerReplacesTheGuardian` |
@@ -60,7 +60,7 @@ Educational project, not audited. This document states what the design assumes, 
 
 - **Guardian trust (A21's cousin).** The guardian decides disputes. A dishonest guardian can keep a lying output alive (rule for the proposer) and then the theft succeeds. The replacement is an on-chain dispute game; the idea is described in PLAN.md (Stretch A, not implemented here).
 - **Challenger liveness (A21).** Nothing forces anybody to watch. Run several independent challengers.
-- **Deposit id reuse after a reorg.** Only reachable if the relayer minted too early; with it, the replay guard blocks the legitimate re-deposit and the relayer records it as "already processed". Needs a keying by `(id, tx hash)` in a real system.
+- **Deposit id reuse after a reorg (re-verified 2026-11-12, NOT fixed).** Ids are an L1 counter, so a reorg deeper than `DEPOSIT_CONFIRMATIONS` can give an id the relayer already minted to a *different* deposit (or remove the minted one). Then `L2Bridge.processedDeposits[id]` blocks the legitimate mint and the L2 balance minted for the orphaned deposit is unbacked. The cause is in the contract (the replay guard is keyed by id alone), which this task could not change; the service cannot repair it either, because it cannot mint twice. What the service does: it keeps the record as Done, logs a warning and increments `bridge_deposit_reorged_after_mint_total`, which raises the critical alert `UnbackedMintSuspected`. The randomized run reproduces the loss with zero confirmations and deep reorgs (`ChaosPropertyTest.theHarnessDetectsTheLossThatZeroConfirmationsAllows`) and never with reorgs shallower than the depth. A real fix keys the guard by `(id, L1 tx hash)` or relays only finalized L1 blocks.
 - **Censorship by challenge.** A challenge freezes all finalizations (global gate) until resolution, so a challenger willing to lose a bond can delay exits by at most `RESOLUTION_PERIOD`.
 - **Proposer gas griefing** on the cascade loop (trusted role).
 - **Owner powers** are unrestricted: no timelock, no multisig.
