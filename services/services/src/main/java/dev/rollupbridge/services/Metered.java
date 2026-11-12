@@ -34,7 +34,9 @@ public final class Metered {
         var txs = metrics.counter("bridge_transactions_total", "Transactions sent by service and operation.");
         var proposed = metrics.counter("bridge_outputs_proposed_total", "Output roots posted to L1.");
         var challenged = metrics.counter("bridge_outputs_challenged_total", "Outputs challenged on L1.");
-        var resolved = metrics.counter("bridge_challenges_resolved_total", "Challenges ruled on by the guardian.");
+        proposed.init(); // visible at 0 from the start, so a dashboard or rate() does not see a missing series
+        challenged.init();
+        var resolved =metrics.counter("bridge_challenges_resolved_total", "Challenges ruled on by the guardian.");
         return (T) Proxy.newProxyInstance(port.getClassLoader(), new Class<?>[] {port}, (proxy, method, args) -> {
             boolean isTx = method.getReturnType() == TxResult.class;
             try {
