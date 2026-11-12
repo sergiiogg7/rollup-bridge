@@ -4,10 +4,13 @@ import dev.rollupbridge.core.Bytes32;
 import dev.rollupbridge.core.WithdrawalTree;
 import dev.rollupbridge.core.model.OutputRecord;
 import dev.rollupbridge.core.model.WithdrawalEvent;
+import dev.rollupbridge.core.port.GatewayException;
 import dev.rollupbridge.core.port.L2Reader;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 
 /**
  * Independent check of a posted output against L2.
@@ -45,18 +48,26 @@ public final class OutputVerifier {
         }
 
         WithdrawalTree tree = new WithdrawalTree();
-        boolean contiguous = true;
+        if (realHash.isPresent() && block > l2.headNumber()) {
+            // the block exists but this node's head says otherwise: a lagging or inconsistent answer, not a lie
+            throw new GatewayException("L2 node is inconsistent about its head (block " + block + " exists but is above the head): inconclusive");
+        }
         if (block <= l2.headNumber()) {
+            // A flaky node may repeat or reorder logs: that is noise, not a lie. Dedupe by id and sort; a GAP means the
+            // node withheld a log, so the check is inconclusive (retry on the next tick) instead of a false accusation.
+            Map<Long, WithdrawalEvent> byId = new TreeMap<>();
             for (WithdrawalEvent e : l2.withdrawalEvents(0, block)) {
+                WithdrawalEvent previous = byId.putIfAbsent(e.withdrawal().id(), e);
+                if (previous != null && !previous.withdrawal().leaf().equals(e.withdrawal().leaf())) {
+                    throw new GatewayException("L2 node returned two different withdrawals with id " + e.withdrawal().id());
+                }
+            }
+            for (WithdrawalEvent e : byId.values()) {
                 if (e.withdrawal().id() != tree.size()) {
-                    contiguous = false;
-                    break;
+                    throw new GatewayException("L2 node returned incomplete withdrawal logs (missing id " + tree.size() + "): inconclusive");
                 }
                 tree.append(e.withdrawal().leaf());
             }
-        }
-        if (!contiguous) {
-            reasons.add("L2 withdrawal ids are not contiguous (node returned inconsistent logs)");
         }
         if (tree.size() != output.withdrawalCount()) {
             reasons.add("withdrawal count mismatch: posted " + output.withdrawalCount() + ", real " + tree.size());
