@@ -13,6 +13,8 @@ target/
 
 # Local run state
 .demo/
+.obs/
+.demo-drill/
 .data/
 deployments/*.json
 .env
