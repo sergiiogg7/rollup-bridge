@@ -1,0 +1,155 @@
+# Unit tests of monitoring/alerts.yml: `promtool test rules monitoring/tests/alerts.test.yml` (run from monitoring/).
+# Each rule has a firing case; the ones with a threshold also have a case that must stay quiet.
+rule_files:
+  - ../alerts.yml
+
+evaluation_interval: 5s
+
+tests:
+  - name: output half way through its window and unchecked fires
+    interval: 5s
+    input_series:
+      - series: 'bridge_unchecked_output_min_window_remaining_seconds{job="bridge",instance="a"}'
+        values: '100 80 55 50 45 40 35'
+      - series: 'bridge_challenge_window_seconds{job="bridge",instance="a"}'
+        values: '120x10'
+    alert_rule_test:
+      - alertname: OutputWindowClosingUnchecked
+        eval_time: 5s
+        exp_alerts: []
+      - alertname: OutputWindowClosingUnchecked
+        eval_time: 30s
+        exp_alerts:
+          - exp_labels: {severity: critical, job: bridge, instance: a}
+            exp_annotations:
+              summary: "An output is more than halfway through its challenge window and the challenger has not verified it"
+              description: "35 s left. If it is wrong and nobody challenges it, it finalizes. Check the challenger (docs/RUNBOOK.md)."
+
+  - name: unchecked output that still has most of its window stays quiet
+    interval: 5s
+    input_series:
+      - series: 'bridge_unchecked_output_min_window_remaining_seconds{job="bridge",instance="a"}'
+        values: '110x20'
+      - series: 'bridge_challenge_window_seconds{job="bridge",instance="a"}'
+        values: '120x20'
+    alert_rule_test:
+      - alertname: OutputWindowClosingUnchecked
+        eval_time: 90s
+        exp_alerts: []
+
+  - name: challenger that stopped ticking fires, a ticking one does not
+    interval: 5s
+    input_series:
+      - series: 'bridge_service_last_success_timestamp_seconds{service="challenger",job="bridge",instance="a"}'
+        values: '0x7 _x30'
+    alert_rule_test:
+      - alertname: ChallengerDown
+        eval_time: 20s
+        exp_alerts: []
+      - alertname: ChallengerDown
+        eval_time: 60s
+        exp_alerts:
+          - exp_labels: {severity: critical, service: challenger, job: bridge, instance: a}
+            exp_annotations:
+              summary: "The challenger is not ticking (process down, or every tick failing)"
+              description: "Without a challenger a malicious output cannot be disputed; see docs/RUNBOOK.md."
+
+  - name: challenger series gone altogether fires through absent()
+    interval: 5s
+    input_series:
+      - series: 'bridge_service_last_success_timestamp_seconds{service="proposer",job="bridge",instance="a"}'
+        values: '10x20'
+    alert_rule_test:
+      - alertname: ChallengerDown
+        eval_time: 30s
+        exp_alerts:
+          - exp_labels: {severity: critical, service: challenger}
+            exp_annotations:
+              summary: "The challenger is not ticking (process down, or every tick failing)"
+              description: "Without a challenger a malicious output cannot be disputed; see docs/RUNBOOK.md."
+
+  - name: deposit pending for too long
+    interval: 10s
+    input_series:
+      - series: 'bridge_deposit_oldest_pending_age_seconds{job="bridge",instance="a"}'
+        values: '0+100x20'
+    alert_rule_test:
+      - alertname: DepositStuck
+        eval_time: 50s
+        exp_alerts: []
+      - alertname: DepositStuck
+        eval_time: 90s
+        exp_alerts:
+          - exp_labels: {severity: warning, job: bridge, instance: a}
+            exp_annotations:
+              summary: "A deposit has been pending for more than 5 minutes"
+
+  - name: cursor far behind the head
+    interval: 10s
+    input_series:
+      - series: 'bridge_cursor_lag_blocks{chain="l1",job="bridge",instance="a"}'
+        values: '30x20'
+      - series: 'bridge_cursor_lag_blocks{chain="l2",job="bridge",instance="a"}'
+        values: '1x20'
+    alert_rule_test:
+      - alertname: CursorStalled
+        eval_time: 90s
+        exp_alerts:
+          - exp_labels: {severity: warning, chain: l1, job: bridge, instance: a}
+            exp_annotations:
+              summary: "The l1 scan cursor is 30 blocks behind the head"
+              description: "A healthy relayer sets its cursor to the head every tick."
+
+  - name: paused, challenged, target down, stalled service
+    interval: 5s
+    input_series:
+      - series: 'bridge_l1_paused{job="bridge",instance="a"}'
+        values: '1x20'
+      - series: 'bridge_outputs{status="challenged",job="bridge",instance="a"}'
+        values: '1x20'
+      - series: 'bridge_outputs{status="proposed",job="bridge",instance="a"}'
+        values: '3x20'
+      - series: 'up{job="bridge-challenger",instance="b"}'
+        values: '0x20'
+      - series: 'bridge_service_last_success_timestamp_seconds{service="proposer",job="bridge",instance="a"}'
+        values: '0x20'
+    alert_rule_test:
+      - alertname: BridgePaused
+        eval_time: 10s
+        exp_alerts:
+          - exp_labels: {severity: warning, job: bridge, instance: a}
+            exp_annotations:
+              summary: "The L1 bridge is paused (deposits and withdrawals are blocked)"
+      - alertname: OutputChallenged
+        eval_time: 10s
+        exp_alerts:
+          - exp_labels: {severity: warning, status: challenged, job: bridge, instance: a}
+            exp_annotations:
+              summary: "An output is challenged and waits for the guardian's ruling"
+      - alertname: TargetDown
+        eval_time: 30s
+        exp_alerts:
+          - exp_labels: {severity: critical, job: bridge-challenger, instance: b}
+            exp_annotations:
+              summary: "bridge-challenger (b) cannot be scraped"
+      - alertname: ServiceStalled
+        eval_time: 80s
+        exp_alerts:
+          - exp_labels: {severity: warning, service: proposer, job: bridge, instance: a}
+            exp_annotations:
+              summary: "proposer has not completed a tick for over a minute"
+
+  - name: errors burst fires, a quiet counter does not
+    interval: 10s
+    input_series:
+      - series: 'bridge_service_errors_total{service="proposer",reason="rpc_transport",job="bridge",instance="a"}'
+        values: '0+3x20'
+      - series: 'bridge_service_errors_total{service="challenger",reason="rpc_transport",job="bridge",instance="a"}'
+        values: '0x20'
+    alert_rule_test:
+      - alertname: ServiceErrorsHigh
+        eval_time: 100s
+        exp_alerts:
+          - exp_labels: {severity: warning, service: proposer, reason: rpc_transport}
+            exp_annotations:
+              summary: "proposer is failing with rpc_transport"

@@ -1,0 +1,18 @@
+# Prometheus configuration for the bridge services (native, no Docker; see scripts/observability-up.sh).
+# The targets are the demo defaults; observability-up.sh rewrites the ports from L1/STATUS_PORT variables.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  # `rollup-bridge all` (every role in one JVM, as the demo runs it); STATUS_PORT serves /metrics.
+  - job_name: bridge
+    static_configs:
+      - targets: ["127.0.0.1:18088"]
+  # Optional: a challenger running as its own process (the fault-injection test of docs/OBSERVABILITY.md).
+  - job_name: bridge-challenger
+    static_configs:
+      - targets: ["127.0.0.1:18089"]

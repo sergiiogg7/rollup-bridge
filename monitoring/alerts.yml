@@ -1,0 +1,77 @@
+# Alert rules for the bridge. Thresholds are tuned for the lab (120 s challenge window, 1 s polling);
+# the ones that depend on the window are expressed as a FRACTION of it, so they scale to a 7-day window.
+# Every rule is exercised by monitoring/tests/alerts.test.yml (promtool test rules).
+groups:
+  - name: bridge-safety
+    rules:
+      - alert: OutputWindowClosingUnchecked
+        expr: >
+          bridge_unchecked_output_min_window_remaining_seconds
+            < on(job, instance) 0.5 * bridge_challenge_window_seconds
+        for: 10s
+        labels: {severity: critical}
+        annotations:
+          summary: "An output is more than halfway through its challenge window and the challenger has not verified it"
+          description: "{{ $value }} s left. If it is wrong and nobody challenges it, it finalizes. Check the challenger (docs/RUNBOOK.md)."
+
+      - alert: ChallengerDown
+        expr: >
+          absent(bridge_service_last_success_timestamp_seconds{service="challenger"})
+            or (time() - bridge_service_last_success_timestamp_seconds{service="challenger"} > 30)
+        for: 10s
+        labels: {severity: critical}
+        annotations:
+          summary: "The challenger is not ticking (process down, or every tick failing)"
+          description: "Without a challenger a malicious output cannot be disputed; see docs/RUNBOOK.md."
+
+      - alert: OutputChallenged
+        expr: bridge_outputs{status="challenged"} > 0
+        for: 0s
+        labels: {severity: warning}
+        annotations:
+          summary: "An output is challenged and waits for the guardian's ruling"
+
+      - alert: BridgePaused
+        expr: bridge_l1_paused == 1
+        for: 0s
+        labels: {severity: warning}
+        annotations:
+          summary: "The L1 bridge is paused (deposits and withdrawals are blocked)"
+
+  - name: bridge-liveness
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 15s
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.job }} ({{ $labels.instance }}) cannot be scraped"
+
+      - alert: ServiceStalled
+        expr: time() - bridge_service_last_success_timestamp_seconds > 60
+        for: 10s
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.service }} has not completed a tick for over a minute"
+
+      - alert: CursorStalled
+        expr: bridge_cursor_lag_blocks > 25
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: "The {{ $labels.chain }} scan cursor is {{ $value }} blocks behind the head"
+          description: "A healthy relayer sets its cursor to the head every tick."
+
+      - alert: DepositStuck
+        expr: bridge_deposit_oldest_pending_age_seconds > 300
+        for: 30s
+        labels: {severity: warning}
+        annotations:
+          summary: "A deposit has been pending for more than 5 minutes"
+
+      - alert: ServiceErrorsHigh
+        expr: sum by (service, reason) (increase(bridge_service_errors_total[2m])) > 5
+        for: 0s
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.service }} is failing with {{ $labels.reason }}"
