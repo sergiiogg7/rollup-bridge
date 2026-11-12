@@ -5,9 +5,16 @@ import dev.rollupbridge.adapters.evm.EvmL1Gateway;
 import dev.rollupbridge.adapters.evm.EvmL2Gateway;
 import dev.rollupbridge.adapters.rpc.JsonRpcClient;
 import dev.rollupbridge.adapters.store.SqliteStore;
+import dev.rollupbridge.core.metrics.MetricsRegistry;
+import dev.rollupbridge.core.port.L1Reader;
+import dev.rollupbridge.core.port.L1Writer;
+import dev.rollupbridge.core.port.L2Reader;
+import dev.rollupbridge.core.port.L2Writer;
+import dev.rollupbridge.services.BridgeCollector;
 import dev.rollupbridge.services.Challenger;
 import dev.rollupbridge.services.DepositRelayer;
 import dev.rollupbridge.services.Guardian;
+import dev.rollupbridge.services.Metered;
 import dev.rollupbridge.services.OutputVerifier;
 import dev.rollupbridge.services.Proposer;
 import dev.rollupbridge.services.Service;
@@ -20,6 +27,7 @@ import java.nio.file.Files;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * Entry point. One process per role in production; {@code all} runs every role in one JVM for demos.
@@ -45,10 +53,19 @@ public final class Main {
         String command = args[0];
 
         switch (command) {
-            case "deposit-relayer" -> run(List.of(depositRelayer(cfg, depositStore(cfg))), cfg, once);
-            case "proposer" -> run(List.of(proposer(cfg)), cfg, once);
-            case "withdrawal-relayer" -> run(List.of(withdrawalRelayer(cfg, withdrawalStore(cfg))), cfg, once);
-            case "challenger" -> run(List.of(challenger(cfg, new SqliteStore("jdbc:sqlite:" + cfg.dbDir().resolve("challenger.db").toAbsolutePath()))), cfg, once);
+            case "deposit-relayer" -> {
+                SqliteStore deposits = depositStore(cfg);
+                run(List.of(depositRelayer(cfg, deposits)), cfg, once, deposits, null, null);
+            }
+            case "proposer" -> run(List.of(proposer(cfg)), cfg, once, null, null, null);
+            case "withdrawal-relayer" -> {
+                SqliteStore withdrawals = withdrawalStore(cfg);
+                run(List.of(withdrawalRelayer(cfg, withdrawals)), cfg, once, null, withdrawals, null);
+            }
+            case "challenger" -> {
+                SqliteStore checked = challengerStore(cfg);
+                run(List.of(challenger(cfg, checked)), cfg, once, null, null, checked);
+            }
             case "guardian" -> guardian(cfg, args);
             case "all" -> all(cfg, once);
             case "status" -> System.out.println(status(cfg, depositStore(cfg), withdrawalStore(cfg)));
@@ -71,30 +88,55 @@ public final class Main {
         return new SqliteStore("jdbc:sqlite:" + c.dbDir().resolve("deposit-relayer.db").toAbsolutePath());
     }
 
+    private static SqliteStore challengerStore(Config c) {
+        return new SqliteStore("jdbc:sqlite:" + c.dbDir().resolve("challenger.db").toAbsolutePath());
+    }
+
     private static SqliteStore withdrawalStore(Config c) {
         return new SqliteStore("jdbc:sqlite:" + c.dbDir().resolve("withdrawal-relayer.db").toAbsolutePath());
     }
 
+    /** One registry per process; every port of every service is decorated with {@link Metered} (see {@code /metrics}). */
+    private static final MetricsRegistry METRICS = new MetricsRegistry();
+
+    private static L1Reader l1r(Config c, String service) {
+        return Metered.wrap(L1Reader.class, l1(c, null), METRICS, service);
+    }
+
+    private static L1Writer l1w(Config c, String key, String service) {
+        return Metered.wrap(L1Writer.class, l1(c, key), METRICS, service);
+    }
+
+    private static L2Reader l2r(Config c, String service) {
+        return Metered.wrap(L2Reader.class, l2(c, null), METRICS, service);
+    }
+
     private static Service depositRelayer(Config c, SqliteStore store) {
+        String s = "deposit-relayer";
         return new DepositRelayer(
-                l1(c, null), l2(c, null), l2(c, c.require(c.relayerKey(), "RELAYER_KEY")), store,
-                new DepositRelayer.Config(c.depositConfirmations(), c.l1StartBlock(), Math.max(20, c.depositConfirmations() + 5)));
+                l1r(c, s), l2r(c, s), Metered.wrap(L2Writer.class, l2(c, c.require(c.relayerKey(), "RELAYER_KEY")), METRICS, s), store,
+                new DepositRelayer.Config(c.depositConfirmations(), c.l1StartBlock(), Math.max(20, c.depositConfirmations() + 5)),
+                METRICS);
     }
 
     private static Service proposer(Config c) {
-        return new Proposer(l1(c, null), l1(c, c.require(c.proposerKey(), "PROPOSER_KEY")), l2(c, null), new Proposer.Config(0));
+        String s = "proposer";
+        return new Proposer(l1r(c, s), l1w(c, c.require(c.proposerKey(), "PROPOSER_KEY"), s), l2r(c, s), new Proposer.Config(0));
     }
 
     private static Service withdrawalRelayer(Config c, SqliteStore store) {
-        return new WithdrawalRelayer(l1(c, null), l1(c, c.require(c.relayerKey(), "RELAYER_KEY")), l2(c, null), store);
+        String s = "withdrawal-relayer";
+        return new WithdrawalRelayer(l1r(c, s), l1w(c, c.require(c.relayerKey(), "RELAYER_KEY"), s), l2r(c, s), store);
     }
 
     private static Service challenger(Config c, SqliteStore store) {
-        return new Challenger(l1(c, null), l1(c, c.require(c.challengerKey(), "CHALLENGER_KEY")), new OutputVerifier(l2(c, null)), store);
+        String s = "challenger";
+        return new Challenger(l1r(c, s), l1w(c, c.require(c.challengerKey(), "CHALLENGER_KEY"), s), new OutputVerifier(l2r(c, s)), store);
     }
 
     private static Guardian guardianService(Config c) {
-        return new Guardian(l1(c, null), l1(c, c.require(c.guardianKey(), "GUARDIAN_KEY")), new OutputVerifier(l2(c, null)));
+        String s = "guardian";
+        return new Guardian(l1r(c, s), l1w(c, c.require(c.guardianKey(), "GUARDIAN_KEY"), s), new OutputVerifier(l2r(c, s)));
     }
 
     // ----- commands -----
@@ -124,7 +166,7 @@ public final class Main {
         Guardian g = guardianService(cfg);
         String sub = args.length > 1 ? args[1] : "watch";
         switch (sub) {
-            case "watch" -> run(List.of(g), cfg, List.of(args).contains("--once"));
+            case "watch" -> run(List.of(g), cfg, List.of(args).contains("--once"), null, null, null);
             case "resolve" -> System.out.println("proposer was wrong: " + g.resolve(Long.parseLong(args[2])));
             case "pause" -> g.pause();
             case "unpause" -> g.unpause();
@@ -135,27 +177,37 @@ public final class Main {
     private static void all(Config cfg, boolean once) throws IOException {
         SqliteStore deposits = depositStore(cfg);
         SqliteStore withdrawals = withdrawalStore(cfg);
-        SqliteStore challengerDb = new SqliteStore("jdbc:sqlite:" + cfg.dbDir().resolve("challenger.db").toAbsolutePath());
+        SqliteStore challengerDb = challengerStore(cfg);
         List<Service> services = List.of(
                 depositRelayer(cfg, deposits),
                 proposer(cfg),
                 withdrawalRelayer(cfg, withdrawals),
                 challenger(cfg, challengerDb),
                 guardianService(cfg));
-        if (cfg.statusPort() > 0) {
-            serveStatus(cfg, deposits, withdrawals);
-        }
-        run(services, cfg, once);
+        run(services, cfg, once, deposits, withdrawals, challengerDb, () -> status(cfg, deposits, withdrawals));
     }
 
-    private static void run(List<Service> services, Config cfg, boolean once) {
+    private static void run(List<Service> services, Config cfg, boolean once, SqliteStore deposits, SqliteStore withdrawals, SqliteStore checked) {
+        run(services, cfg, once, deposits, withdrawals, checked, null);
+    }
+
+    private static void run(
+            List<Service> services, Config cfg, boolean once,
+            SqliteStore deposits, SqliteStore withdrawals, SqliteStore checked, Supplier<String> statusPage) {
         if (once) {
             services.forEach(Service::tick);
             return;
         }
+        if (cfg.statusPort() > 0) {
+            try {
+                serveHttp(cfg, statusPage, new BridgeCollector(l1r(cfg, "collector"), l2r(cfg, "collector"), deposits, withdrawals, checked, METRICS));
+            } catch (IOException e) {
+                throw new IllegalStateException("cannot listen on STATUS_PORT " + cfg.statusPort(), e);
+            }
+        }
         List<Thread> threads = new ArrayList<>();
         for (Service s : services) {
-            Thread t = new Thread(new ServiceRunner(s, Duration.ofMillis(s instanceof Challenger ? cfg.challengerPollMillis() : cfg.pollMillis())), s.name());
+            Thread t = new Thread(new ServiceRunner(s, Duration.ofMillis(s instanceof Challenger ? cfg.challengerPollMillis() : cfg.pollMillis()), METRICS), s.name());
             t.start();
             threads.add(t);
         }
@@ -173,23 +225,37 @@ public final class Main {
         return StatusReport.render(l1(cfg, null), l2(cfg, null), deposits, withdrawals);
     }
 
-    /** A tiny plain-text status page (a recruiter can curl it or open it in a browser). */
-    private static void serveStatus(Config cfg, SqliteStore deposits, SqliteStore withdrawals) throws IOException {
+    /**
+     * Listens on {@code STATUS_PORT} (127.0.0.1 only): {@code /metrics} in the Prometheus text format (the gauges are
+     * refreshed right before each scrape) and, when a supplier is given, a plain-text status page on {@code /}.
+     */
+    private static void serveHttp(Config cfg, Supplier<String> statusPage, BridgeCollector collector) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", cfg.statusPort()), 0);
-        server.createContext("/", exchange -> {
-            byte[] body;
-            try {
-                body = status(cfg, deposits, withdrawals).getBytes(StandardCharsets.UTF_8);
-            } catch (RuntimeException e) {
-                body = ("status unavailable: " + e.getMessage()).getBytes(StandardCharsets.UTF_8);
-            }
-            exchange.getResponseHeaders().add("content-type", "text/plain; charset=utf-8");
-            exchange.sendResponseHeaders(200, body.length);
-            exchange.getResponseBody().write(body);
-            exchange.close();
+        server.createContext("/metrics", exchange -> {
+            collector.collect();
+            reply(exchange, METRICS.render(), "text/plain; version=0.0.4; charset=utf-8");
         });
+        if (statusPage != null) {
+            server.createContext("/", exchange -> {
+                String body;
+                try {
+                    body = statusPage.get();
+                } catch (RuntimeException e) {
+                    body = "status unavailable: " + e.getMessage();
+                }
+                reply(exchange, body, "text/plain; charset=utf-8");
+            });
+        }
         server.start();
-        System.out.println("status page on http://127.0.0.1:" + cfg.statusPort() + "/");
+        System.out.println("metrics on http://127.0.0.1:" + cfg.statusPort() + "/metrics" + (statusPage != null ? ", status page on /" : ""));
+    }
+
+    private static void reply(com.sun.net.httpserver.HttpExchange exchange, String text, String contentType) throws IOException {
+        byte[] body = text.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().add("content-type", contentType);
+        exchange.sendResponseHeaders(200, body.length);
+        exchange.getResponseBody().write(body);
+        exchange.close();
     }
 
     private static void usage() {
