@@ -17,6 +17,10 @@ import {IOutputOracle, Output, OutputStatus} from "../interfaces/IOutputOracle.s
 ///      Bonds are pull-payments (`credits` + `withdrawCredits`) so a hostile recipient cannot block
 ///      resolution. Analogy: this contract is the "ledger of claims" with an escrow and an arbiter.
 contract OutputOracle is IOutputOracle, Ownable2Step, ReentrancyGuard {
+    // Slither "timestamp" is silenced for the whole contract on purpose: the challenge and resolution
+    // windows are defined in block.timestamp. A validator can skew it by seconds, which is irrelevant
+    // for windows of hours or days (and the bridge treats them as lower bounds on age).
+    // slither-disable-start timestamp
     /// @notice Seconds an output can be challenged, and the minimum age before it can back a payout.
     uint256 public immutable CHALLENGE_WINDOW;
     /// @notice Seconds the guardian has to resolve a challenge; after that anyone can expire it.
@@ -310,4 +314,5 @@ contract OutputOracle is IOutputOracle, Ownable2Step, ReentrancyGuard {
             emit OutputDeleted(i);
         }
     }
+    // slither-disable-end timestamp
 }

@@ -17,9 +17,12 @@ contract BridgedETH is ERC20 {
         _;
     }
 
+    // Slither "missing-zero-check": the only deployer is L2Bridge, which passes address(this), never zero.
+    // slither-disable-start missing-zero-check
     constructor(address bridge_) ERC20("Bridged ETH", "bETH") {
         BRIDGE = bridge_;
     }
+    // slither-disable-end missing-zero-check
 
     function mint(address to, uint256 amount) external onlyBridge {
         _mint(to, amount);

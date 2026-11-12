@@ -58,6 +58,10 @@ contract L2Bridge is Ownable2Step {
         emit RelayerUpdated(relayer_);
     }
 
+    // Slither "reentrancy-events": the events after TOKEN.mint/burn are emitted after calls to the bridge's
+    // own BridgedETH (a trusted contract deployed by this one, no hooks, no callbacks). Emitting after the
+    // state change keeps the event faithful to what actually happened.
+    // slither-disable-start reentrancy-events
     /// @notice Mints the deposit made on L1. Only the relayer; each `depositId` works once.
     function finalizeDeposit(uint256 depositId, address to, uint256 amount) external onlyRelayer {
         if (processedDeposits[depositId]) revert DepositAlreadyProcessed(depositId);
@@ -75,6 +79,8 @@ contract L2Bridge is Ownable2Step {
         id = _tree.insert(leaf);
         emit WithdrawalInitiated(id, msg.sender, target, amount, leaf, _tree.root());
     }
+
+    // slither-disable-end reentrancy-events
 
     /// @notice Root of the withdrawal tree (what the proposer commits to on L1).
     function withdrawalRoot() external view returns (bytes32) {

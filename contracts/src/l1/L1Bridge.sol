@@ -124,6 +124,9 @@ contract L1Bridge is Ownable2Step, ReentrancyGuard {
     // Withdrawals
     // ---------------------------------------------------------------------------------------------
 
+    // Slither "timestamp" is a false positive here: block.timestamp is only stored (provenAt), never used
+    // to gate anything; the comparison it flags is on an enum status. The real window check lives in the oracle.
+    // slither-disable-start timestamp
     /// @notice Registers a withdrawal as proven against output `outputIndex`. Re-proving is only possible when
     ///         the output used before was deleted.
     /// @param proof Sibling hashes from the leaf to the root (exactly `IncrementalMerkleTree.DEPTH` of them).
@@ -148,6 +151,8 @@ contract L1Bridge is Ownable2Step, ReentrancyGuard {
         proofs[leaf] = Proof({outputIndex: uint64(outputIndex), provenAt: uint64(block.timestamp), exists: true});
         emit WithdrawalProven(leaf, outputIndex, w.id);
     }
+
+    // slither-disable-end timestamp
 
     /// @notice Pays a proven withdrawal once its output is finalizable. Callable by anyone (the relayer, or
     ///         the user themselves); the money always goes to `w.target`.
