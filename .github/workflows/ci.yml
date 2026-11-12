@@ -1,0 +1,93 @@
+# NOTE: this workflow has NOT been run yet (the project is not on GitHub at the time of writing).
+# It mirrors the commands that were run locally; the first push is the real test.
+name: CI
+
+permissions: {}
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  contracts:
+    name: Contracts (Foundry)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: Install Solidity dependencies
+        working-directory: .
+        run: scripts/install-deps.sh
+
+      - name: Format check
+        run: forge fmt --check
+
+      - name: Build
+        run: forge build --sizes
+
+      - name: Tests (CI profile: 5000 fuzz runs, deeper invariants)
+        run: forge test -vvv
+        env:
+          FOUNDRY_PROFILE: ci
+
+      - name: Coverage gate (100 percent of src/ lines)
+        run: |
+          forge coverage --no-match-coverage "script|test" --report summary | tee coverage.txt
+          total=$(grep '^| Total' coverage.txt | grep -o '[0-9.]*%' | head -1 | tr -d '%')
+          echo "line coverage: ${total}%"
+          awk -v c="$total" 'BEGIN { exit (c >= 100.0) ? 0 : 1 }'
+
+      - name: Gas snapshot is up to date
+        run: forge snapshot --check
+
+      - name: Slither
+        uses: crytic/slither-action@v0.4.0
+        with:
+          target: contracts
+          slither-args: --exclude-dependencies --config-file slither.config.json
+          fail-on: low
+
+  services:
+    name: Java services (Maven, two native Anvils)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Foundry (anvil is used by the end-to-end tests)
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Solidity dependencies and artifacts
+        run: |
+          scripts/install-deps.sh
+          (cd contracts && forge build)
+
+      - name: Build and test (unit, differential, end-to-end)
+        run: ./mvnw -B -T 1 verify
+
+      - name: Demo script (deposit, withdrawal, caught attack)
+        run: scripts/demo.sh
