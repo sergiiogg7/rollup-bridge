@@ -20,7 +20,7 @@
 
 ## Known design limitations (details in docs/THREAT-MODEL.md)
 
-- The **guardian** is a trusted party that decides challenges. Replacing it with an on-chain fault-proof game is out of scope.
+- The **guardian** is a trusted party that decides challenges. Replacing it with an on-chain fault-proof game is out of scope: `contracts/src/disputes/` contains a toy bisection game over a toy VM (see [docs/DISPUTE-GAME.md](docs/DISPUTE-GAME.md)), but it is not connected to the bridge and does not verify the L2 state transition. It has not been audited either.
 - Safety needs **at least one honest online challenger** per output window. A test (`challengerOfflineLongerThanTheWindowLetsTheAttackThrough`) shows the theft succeeding when nobody watches.
 - The deposit relayer is trusted; at `DEPOSIT_CONFIRMATIONS=0` an L1 reorg loses funds (test `e6_zeroConfirmationsMintsUnbackedFundsAfterReorg`).
 - Deposit ids are an L1 counter and can be reused after a reorg deeper than the confirmation depth: the L2 mint for the orphaned deposit is then unbacked. The services detect and alert (`UnbackedMintSuspected`) but cannot repair it; the replay guard of `L2Bridge` is keyed by id alone.
