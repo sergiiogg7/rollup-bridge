@@ -19,9 +19,9 @@ Written 2026-11-12. Follows `PROGRESS.md`: one repo at a time, no commit or push
 | 3 Gateways, store, deposit relayer | Done, E1, E1b, both E6 variants, crash test. |
 | 4 Proposer, withdrawal relayer | Done: E2, E5, E5b, E7, E8, E11. |
 | 5 Challenger, guardian | Done: E3 (+E3b four kinds of lie, E3c, E3d), E4, E9, E10, negative "nobody challenges" test, expiring challenge, guardian replacement. |
-| 6 Chaos and reliability | Partial. Crash-after-transaction injection (`FaultyL1Writer`) and `kill`-style restarts against a SQLite file are covered. NOT done: gateway fault decorators (latency, duplicated or out-of-order logs, stale heads), two instances running concurrently, 1000 random interleavings. |
-| 7 Observability, compose devnet | NOT done: no metrics, no Prometheus/Grafana, no Docker artifacts. What exists: a plain-text status page and `status` command. |
-| 8 Docs and release | Docs done (README with Mermaid, SPEC, THREAT-MODEL, SECURITY, CLAUDE.md, DEMO with real output, CI workflow untested). NOT done: RUNBOOK, ADR files, CHANGELOG, release workflow, tag, GitHub metadata (owner's decision). |
+| 6 Chaos and reliability | Done, with a stated limit. Fault-injection decorators for any port (`Faults`: errors, lost responses, latency, duplicated/shuffled logs, stale heads, crashes after a mined transaction); an in-memory model of both chains (`SimWorld`) and a randomized run (`ChaosRun`): 1000 scripts in under 20 s (the whole test class took 17.9 s; 5000 more scripts with other seeds also passed), safety checked after every step and exact conservation at the end. It found three real bugs, fixed (challenger and withdrawal relayer trusting a transaction a reorg removed; verifier accusing on noisy logs). Limits: the run is against a MODEL of the contracts, not Anvil; reorgs are shallower than the confirmation depth (deeper ones are the documented residual risk); `kill -9` is simulated (an exception after a mined tx) rather than a real process kill, which the earlier SQLite restart tests cover. Not done: two instances racing in real threads (two instances with separate stores are in the random scripts). |
+| 7 Observability | Done natively, no Docker. Metrics on `/metrics`, `monitoring/` (Prometheus, 10 alerts with promtool unit tests, provisioned Grafana dashboard), `scripts/observability-*.sh`; all 21 dashboard queries return data through Grafana and an alert drill (challenger killed while a lying output is pending) fires and clears: `docs/OBSERVABILITY.md`. NOT done: Dockerfile and compose devnet; Alertmanager; a browser look at the dashboard. |
+| 8 Docs and release | RUNBOOK, ADRs (`docs/adr/`), CHANGELOG, OBSERVABILITY, release workflow (`release.yml`, runs only on a `v*` tag), LICENSE, badges, About and topics applied. NOT done: the tag and the GitHub release (the owner decides); the L1-reorg segment of `scripts/demo.sh` and a re-captured DEMO.md (pending). |
 | Stretch A (bisection game) | NOT started. |
 | Stretch B (Bitcoin SPV) | NOT started. |
 
@@ -44,7 +44,7 @@ Verification numbers (all run on 2026-11-12): `forge test` 121 passed (also with
 
 ## Known issues and sharp edges found while building
 
-- Deposit ids are an L1 counter; after a reorg a different deposit can reuse an id the relayer already minted (only possible at too-low confirmations). See THREAT-MODEL residual risks.
+- Deposit ids are an L1 counter; after a reorg deeper than the confirmation depth a different deposit can reuse an id the relayer already minted. Re-verified, not fixed (it is a contract property); detected by `UnbackedMintSuspected`. See THREAT-MODEL residual risks.
 
 ## 1. Goal and scope
 

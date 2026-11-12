@@ -15,15 +15,15 @@
 
 - **Slither runs only in CI, not locally.** The machine this was built on has no working Python (only Windows Store stubs). `crytic/slither-action` runs in `.github/workflows/ci.yml` with `fail-on: low` and passes. Its first run reported three low-severity patterns that are by design and are silenced inline with the reason (no detector is excluded globally): `timestamp` in `OutputOracle` (windows of hours or days, a skew of seconds is irrelevant), `reentrancy-events` in `L2Bridge` (events after `mint`/`burn` on its own token) and `missing-zero-check` in the `BridgedETH` constructor (only `L2Bridge` deploys it, with `address(this)`). A clean Slither run is not an audit.
 - No external audit, no formal verification, no mutation testing.
-- The CI workflow itself has not been run (the project is not on GitHub yet).
-- No monitoring or alerting; no operational runbook.
+- Monitoring is local only: Prometheus and Grafana were run natively against the demo and an alert drill passed (docs/OBSERVABILITY.md), but nothing pages anyone (no Alertmanager) and nothing was run for more than minutes.
+- The randomized chaos test runs the real services against an in-memory MODEL of the contracts, not the contracts: it is evidence about the services, not about the Solidity.
 
 ## Known design limitations (details in docs/THREAT-MODEL.md)
 
 - The **guardian** is a trusted party that decides challenges. Replacing it with an on-chain fault-proof game is out of scope.
 - Safety needs **at least one honest online challenger** per output window. A test (`challengerOfflineLongerThanTheWindowLetsTheAttackThrough`) shows the theft succeeding when nobody watches.
 - The deposit relayer is trusted; at `DEPOSIT_CONFIRMATIONS=0` an L1 reorg loses funds (test `e6_zeroConfirmationsMintsUnbackedFundsAfterReorg`).
-- Deposit ids are an L1 counter and can be reused after a reorg.
+- Deposit ids are an L1 counter and can be reused after a reorg deeper than the confirmation depth: the L2 mint for the orphaned deposit is then unbacked. The services detect and alert (`UnbackedMintSuspected`) but cannot repair it; the replay guard of `L2Bridge` is keyed by id alone.
 - The owner has unrestricted configuration power (no timelock, no multisig).
 - The local demo uses the **public Anvil test keys**. They are printed in this repo on purpose and control nothing of value on any real network.
 
