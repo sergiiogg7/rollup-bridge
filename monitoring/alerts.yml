@@ -24,6 +24,14 @@ groups:
           summary: "The challenger is not ticking (process down, or every tick failing)"
           description: "Without a challenger a malicious output cannot be disputed; see docs/RUNBOOK.md."
 
+      - alert: UnbackedMintSuspected
+        expr: increase(bridge_deposit_reorged_after_mint_total[10m]) > 0
+        for: 0s
+        labels: {severity: critical}
+        annotations:
+          summary: "A deposit already minted on L2 appeared in a different L1 block (reorg deeper than the confirmation depth)"
+          description: "The L2 mint may no longer be backed by locked ETH; see the residual risk in docs/THREAT-MODEL.md and the runbook."
+
       - alert: OutputChallenged
         expr: bridge_outputs{status="challenged"} > 0
         for: 0s

@@ -153,3 +153,20 @@ tests:
           - exp_labels: {severity: warning, service: proposer, reason: rpc_transport}
             exp_annotations:
               summary: "proposer is failing with rpc_transport"
+
+  - name: a deposit re-observed after its mint raises the critical alert
+    interval: 10s
+    input_series:
+      - series: 'bridge_deposit_reorged_after_mint_total{job="bridge",instance="a"}'
+        values: '0 0 0 1 2 3 4 5'
+    alert_rule_test:
+      - alertname: UnbackedMintSuspected
+        eval_time: 20s
+        exp_alerts: []
+      - alertname: UnbackedMintSuspected
+        eval_time: 60s
+        exp_alerts:
+          - exp_labels: {severity: critical, job: bridge, instance: a}
+            exp_annotations:
+              summary: "A deposit already minted on L2 appeared in a different L1 block (reorg deeper than the confirmation depth)"
+              description: "The L2 mint may no longer be backed by locked ETH; see the residual risk in docs/THREAT-MODEL.md and the runbook."

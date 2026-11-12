@@ -75,6 +75,7 @@ public final class DepositRelayer implements Service {
                 "bridge_deposit_latency_seconds",
                 "Seconds from the relayer first seeing a deposit to its mint on L2 (deposits seen by this process only).",
                 1, 2, 5, 10, 30, 60, 120, 300, 600);
+        metrics.counter("bridge_deposit_reorged_after_mint_total", "Deposits minted on L2 that later appeared in a different L1 block (unbacked mint suspected).").init();
         metrics.gauge(
                 "bridge_deposit_oldest_pending_age_seconds",
                 "Age of the oldest deposit that is not Done or Dropped (0 when none), measured from first sight by this process.");
@@ -151,8 +152,7 @@ public final class DepositRelayer implements Service {
                 case DepositState.Dropped d -> store.saveDeposit(rec.reobserved(e.l1Block(), e.l1BlockHash(), e.to(), e.amount()));
                 case DepositState.Relaying r -> LOG.warn(
                         "[deposit-relayer] deposit #{} changed block while a relay was in flight (needs operator attention)", rec.id());
-                case DepositState.Done d -> LOG.warn(
-                        "[deposit-relayer] deposit #{} was already minted but now appears in another L1 block: L2 may be unbacked", rec.id());
+                case DepositState.Done d -> reorgedAfterMint(rec);
             }
         }
         // Active deposits whose block hash is no longer canonical and which did not reappear: reorged away.
@@ -216,6 +216,12 @@ public final class DepositRelayer implements Service {
             LOG.warn("[deposit-relayer] could not relay deposit #{}: {}", rec.id(), e.getMessage());
             store.saveDeposit(relaying.transitionTo(new DepositState.Confirmed()));
         }
+    }
+
+    /** The deposit was minted on L2 and now appears in another L1 block: the mint may be unbacked (see THREAT-MODEL). */
+    private void reorgedAfterMint(DepositRecord rec) {
+        LOG.warn("[deposit-relayer] deposit #{} was already minted but now appears in another L1 block: L2 may be unbacked", rec.id());
+        metrics.counter("bridge_deposit_reorged_after_mint_total", "Deposits minted on L2 that later appeared in a different L1 block (unbacked mint suspected).").inc();
     }
 
     private boolean isCanonical(DepositRecord rec) {
