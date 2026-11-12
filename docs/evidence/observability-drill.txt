@@ -1,0 +1,22 @@
+
+==> 1. Chains, contracts, services (the challenger as a separate process)
+
+==> 2. Normal traffic: a deposit and a withdrawal, so that every panel has data
+targets up; the two alerts under test are quiet (a leftover from an earlier run, e.g. ServiceErrorsHigh, may still show):
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"ALERTS","alertname":"ServiceErrorsHigh","alertstate":"firing","reason":"tx_reverted","service":"proposer","severity":"warning"},"value":[1794504887.709,"1"]}]}}
+
+==> 3. FAULT: kill the challenger (pid 11350), then the proposer key posts a lying output
+malicious output #1 posted in tx 0xa83a763b4fb22c6f1214c680200f6acf4a18719ae7ac016d05dc81fbcd45817c
+the fabricated withdrawal #1 (4000000000000000000 wei to 0x14dc79964da2c08b23698b3d3cc7ca32193d9955) was PROVEN against it
+ChallengerDown is FIRING
+OutputWindowClosingUnchecked is FIRING
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"ALERTS","alertname":"ChallengerDown","alertstate":"firing","service":"challenger","severity":"critical"},"value":[1794504965.753,"1"]},{"metric":{"__name__":"ALERTS","alertna...
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"bridge_unchecked_output_min_window_remaining_seconds","instance":"127.0.0.1:38088","job":"bridge"},"value":[1794504965.782,"46"]}]}}
+
+
+==> 4. RECOVERY: restart the challenger; it challenges, the guardian rules, the alerts resolve
+resolved. Counters:
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"bridge_outputs_challenged_total","instance":"127.0.0.1:38089","job":"bridge-challenger"},"value":[1794504977.624,"1"]},{"metric":{"__name__":"bridge_outputs_challenged_total"...
+
+==> drill passed: the alerts fired during the failure and cleared after the recovery
+EXIT 0

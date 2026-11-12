@@ -1,0 +1,42 @@
+== Prometheus targets
+  {"instance":"127.0.0.1:38088","job":"bridge"}	"health":"up"
+  {"instance":"127.0.0.1:38089","job":"bridge-challenger"}	"health":"down"
+  ok    at least one target is UP
+== Prometheus rules
+  ok    rule loaded: OutputWindowClosingUnchecked
+  ok    rule loaded: ChallengerDown
+  ok    rule loaded: OutputChallenged
+  ok    rule loaded: BridgePaused
+  ok    rule loaded: TargetDown
+  ok    rule loaded: ServiceStalled
+  ok    rule loaded: CursorStalled
+  ok    rule loaded: DepositStuck
+  ok    rule loaded: ServiceErrorsHigh
+  firing right now: ChallengerDown OutputWindowClosingUnchecked ServiceErrorsHigh TargetDown 
+== Grafana
+  {"database":"ok","version":"13.3.1","commit":"da3aa3ff574e7dbbf808c66b6daa744defed0441"}
+  ok    dashboard 'Rollup bridge' is provisioned
+  ok    datasource 'prom' is provisioned
+== every dashboard query, evaluated through Grafana's datasource proxy
+  ok    1 series  max(bridge_deposits_pending)
+  ok    1 series  max(bridge_deposit_oldest_pending_age_seconds)
+  ok    1 series  max(bridge_l1_confirmations_waiting)
+  ok    1 series  sum(bridge_outputs_proposed_total)
+  ok    1 series  sum(bridge_outputs_challenged_total)
+  ok    1 series  max(bridge_l1_paused)
+  ok    1 series  count(ALERTS{alertstate="firing"}) or vector(0)
+  ok    5 series  max by (state) (bridge_deposits_by_state)
+  ok    5 series  max by (state) (bridge_withdrawals_by_state)
+  ok    3 series  max by (status) (bridge_outputs)
+  ok    1 series  min(bridge_open_output_min_window_remaining_seconds)
+  ok    1 series  min(bridge_unchecked_output_min_window_remaining_seconds)
+  ok    1 series  0.5 * max(bridge_challenge_window_seconds)
+  ok    2 series  max by (chain) (bridge_cursor_lag_blocks)
+  ok    2 series  max by (chain) (bridge_chain_head_block)
+  ok    1 series  sum by (service, reason) (increase(bridge_service_errors_total[5m]))
+  ok    1 series  histogram_quantile(0.5, sum by (le) (increase(bridge_deposit_latency_seconds_bucket[15m])))
+  ok    1 series  histogram_quantile(0.95, sum by (le) (increase(bridge_deposit_latency_seconds_bucket[15m])))
+  ok    4 series  time() - max by (service) (bridge_service_last_success_timestamp_seconds)
+  ok    4 series  sum by (service, op, outcome) (increase(bridge_transactions_total[1m]))
+  ok    4 series  ALERTS{alertstate="firing"}
+21 queries checked
