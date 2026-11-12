@@ -13,7 +13,7 @@
 
 ## What was NOT done (be honest about it)
 
-- **No Slither.** The machine this was built on has no working Python (only Windows Store stubs), so Slither could not be run locally. `crytic/slither-action` is configured in `.github/workflows/ci.yml` (`fail-on: low`) but has not run yet; expect findings to triage on the first CI run. Local checks used instead: `forge build` (no compiler or lint warnings), `forge fmt --check`, fuzzing, invariants and coverage.
+- **Slither runs only in CI, not locally.** The machine this was built on has no working Python (only Windows Store stubs). `crytic/slither-action` runs in `.github/workflows/ci.yml` with `fail-on: low` and passes. Its first run reported three low-severity patterns that are by design and are silenced inline with the reason (no detector is excluded globally): `timestamp` in `OutputOracle` (windows of hours or days, a skew of seconds is irrelevant), `reentrancy-events` in `L2Bridge` (events after `mint`/`burn` on its own token) and `missing-zero-check` in the `BridgedETH` constructor (only `L2Bridge` deploys it, with `address(this)`). A clean Slither run is not an audit.
 - No external audit, no formal verification, no mutation testing.
 - The CI workflow itself has not been run (the project is not on GitHub yet).
 - No monitoring or alerting; no operational runbook.

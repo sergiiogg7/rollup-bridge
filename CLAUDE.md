@@ -26,8 +26,8 @@ scripts/demo.sh                                  # KEEP=1 to leave it running; p
 - Tests are named `test_`, `test_RevertWhen_`, `testFuzz_`, `invariant_` (Solidity); Java scenario tests are named after the plan IDs (`e1_`, `e3_`, ...).
 - Services must stay idempotent: reconcile with the chain first, then act; persist intent before an external side effect.
 - Keep the ports small; do not let `core` depend on Jackson, web3j or JDBC.
-- Never describe this as audited. Slither could not be run locally (no Python); say so.
+- Never describe this as audited. Slither runs only in CI (no Python locally); its inline silences carry their reason, keep it that way.
 - Test keys only (public Anvil accounts). Real keys never enter the repo. `.env` is ignored.
 - Do not use the Windows Store `python`/`python3` stubs here: they hang.
 - No commit or push without the owner's approval. No `Co-Authored-By` lines.
-- The demo ports deliberately avoid 8545/9545 (used by `go-mini-rollup`). Never `taskkill /IM anvil.exe`: kill by PID.
+- Demo ports default to 18545/19545/18088 and overlap with the `go-mini-rollup` demo (18545/19545/19546): run one at a time or override with `L1_PORT`/`L2_PORT`/`STATUS_PORT`. Never `taskkill /IM anvil.exe`: kill by PID.

@@ -14,7 +14,7 @@ Written 2026-11-12. Follows `PROGRESS.md`: one repo at a time, no commit or push
 | Phase | State |
 |---|---|
 | 0 Bootstrap and spikes | Done. Spike result: web3j-crypto 6.1.0, Jackson 2.23.0 and sqlite-jdbc 3.54.1.0 all work on JDK 25.0.5 (signing a transaction, sending it to Anvil, SQLite round trip). Two native Anvils from a JUnit fixture work; historical `eth_call` works (the proposer reads root/count at the L2 head). |
-| 1 Contracts | Done. 121 Foundry tests (unit, fuzz, 7 invariants, 25 named adversarial tests), 100 % lines/statements/branches/functions of `src/`, `forge fmt` clean, `.gas-snapshot` present, vectors generator, deploy scripts. Slither NOT run (no Python on the machine). |
+| 1 Contracts | Done. 121 Foundry tests (unit, fuzz, 7 invariants, 25 named adversarial tests), 100 % lines/statements/branches/functions of `src/`, `forge fmt` clean, `.gas-snapshot` present, vectors generator, deploy scripts. Slither runs in CI and passes (first run: 3 low-severity patterns silenced inline with their reason). |
 | 2 Java core | Done. 29 tests, 97.4 % line coverage of `core`, differential tests against the Solidity vectors (every size 0..200, proofs) and against the deployed contracts on Anvil. |
 | 3 Gateways, store, deposit relayer | Done, E1, E1b, both E6 variants, crash test. |
 | 4 Proposer, withdrawal relayer | Done: E2, E5, E5b, E7, E8, E11. |

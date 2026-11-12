@@ -64,6 +64,6 @@ Educational project, not audited. This document states what the design assumes, 
 - **Censorship by challenge.** A challenge freezes all finalizations (global gate) until resolution, so a challenger willing to lose a bond can delay exits by at most `RESOLUTION_PERIOD`.
 - **Proposer gas griefing** on the cascade loop (trusted role).
 - **Owner powers** are unrestricted: no timelock, no multisig.
-- **No audit, no formal verification, no Slither run** (see SECURITY.md).
+- **No audit and no formal verification.** Slither runs in CI (see SECURITY.md); a clean run is not an audit.
 - **L2 data availability is out of scope**: the challenger reads L2 from an RPC node. A real optimistic rollup derives L2 from data posted on L1.
 - **Economic parameters** (bond sizes, window) are not modelled.
