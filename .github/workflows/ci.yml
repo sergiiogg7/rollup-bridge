@@ -38,7 +38,7 @@ jobs:
       - name: Build
         run: forge build --sizes
 
-      - name: Tests (CI profile: 5000 fuzz runs, deeper invariants)
+      - name: "Tests (CI profile: 5000 fuzz runs, deeper invariants)"
         run: forge test -vvv
         env:
           FOUNDRY_PROFILE: ci
