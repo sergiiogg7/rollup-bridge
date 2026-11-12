@@ -72,13 +72,15 @@ class StateMachineTest {
                         "Proven->Finalized",
                         "Proven->Invalidated",
                         "Invalidated->Finalized",
-                        "Invalidated->Included");
+                        "Invalidated->Included",
+                        "Finalized->Invalidated");
     }
 
     @Test
-    void terminalStatesHaveNoExit() {
+    void terminalDepositsHaveNoExitAndFinalizedWithdrawalsOnlyTheReorgExit() {
         assertThat(DepositTransitions.table().get(DepositState.Done.class)).isEmpty();
-        assertThat(WithdrawalTransitions.table().get(WithdrawalState.Finalized.class)).isEmpty();
+        // a finalized withdrawal can only go back if an L1 reorg removed its finalize transaction
+        assertThat(WithdrawalTransitions.table().get(WithdrawalState.Finalized.class)).containsExactly(WithdrawalState.Invalidated.class);
     }
 
     @Test

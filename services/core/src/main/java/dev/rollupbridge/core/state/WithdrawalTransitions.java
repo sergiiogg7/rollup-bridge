@@ -12,7 +12,8 @@ public final class WithdrawalTransitions {
                     Set.of(WithdrawalState.Proven.class, WithdrawalState.Invalidated.class, WithdrawalState.Finalized.class),
             WithdrawalState.Proven.class, Set.of(WithdrawalState.Finalized.class, WithdrawalState.Invalidated.class),
             WithdrawalState.Invalidated.class, Set.of(WithdrawalState.Included.class, WithdrawalState.Finalized.class),
-            WithdrawalState.Finalized.class, Set.of());
+            // The finalize transaction itself can be removed by an L1 reorg: the relayer must notice and start over.
+            WithdrawalState.Finalized.class, Set.of(WithdrawalState.Invalidated.class));
 
     private WithdrawalTransitions() {}
 
