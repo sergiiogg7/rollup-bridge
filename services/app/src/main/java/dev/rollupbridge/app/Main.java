@@ -28,6 +28,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 /**
  * Entry point. One process per role in production; {@code all} runs every role in one JVM for demos.
@@ -178,12 +179,17 @@ public final class Main {
         SqliteStore deposits = depositStore(cfg);
         SqliteStore withdrawals = withdrawalStore(cfg);
         SqliteStore challengerDb = challengerStore(cfg);
-        List<Service> services = List.of(
-                depositRelayer(cfg, deposits),
-                proposer(cfg),
-                withdrawalRelayer(cfg, withdrawals),
-                challenger(cfg, challengerDb),
-                guardianService(cfg));
+        // DISABLE_SERVICES=challenger,guardian leaves roles out, so that they can run as their own processes
+        // (a fault-injection and deployment-topology aid; the demo runs everything).
+        String disabled = System.getenv().getOrDefault("DISABLE_SERVICES", "");
+        List<Service> services = Stream.of(
+                        depositRelayer(cfg, deposits),
+                        proposer(cfg),
+                        withdrawalRelayer(cfg, withdrawals),
+                        challenger(cfg, challengerDb),
+                        (Service) guardianService(cfg))
+                .filter(s -> !List.of(disabled.split(",")).contains(s.name()))
+                .toList();
         run(services, cfg, once, deposits, withdrawals, challengerDb, () -> status(cfg, deposits, withdrawals));
     }
 

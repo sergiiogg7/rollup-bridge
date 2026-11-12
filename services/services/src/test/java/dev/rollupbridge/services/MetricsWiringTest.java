@@ -133,9 +133,13 @@ class MetricsWiringTest {
         assertThat(m.gauge("bridge_outputs_in_window", "").value()).isEqualTo(1);
         assertThat(m.gauge("bridge_open_output_min_window_remaining_seconds", "").value()).isEqualTo(500); // 900 + 600 - 1000
         assertThat(m.gauge("bridge_challenger_unchecked_outputs", "").value()).isEqualTo(1);
+        assertThat(m.gauge("bridge_unchecked_output_min_window_remaining_seconds", "").value()).isEqualTo(500);
+        assertThat(m.gauge("bridge_challenge_window_seconds", "").value()).isEqualTo(600);
         assertThat(m.gauge("bridge_outputs", "").value("status", "challenged")).isEqualTo(1);
 
         store.markChecked(1, ROOT);
+        collector.collect();
+        assertThat(m.gauge("bridge_unchecked_output_min_window_remaining_seconds", "").value()).isNaN(); // nothing unchecked
         outage[0] = true; // must not throw; counts the failure and keeps serving the last values
         collector.collect();
         assertThat(m.counter("bridge_collector_errors_total", "").value("section", "l1_head")).isEqualTo(1);

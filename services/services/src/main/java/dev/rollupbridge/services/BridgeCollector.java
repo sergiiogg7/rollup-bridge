@@ -124,6 +124,7 @@ public final class BridgeCollector {
         long open = 0;
         long unchecked = 0;
         long minRemaining = Long.MAX_VALUE;
+        long minUncheckedRemaining = Long.MAX_VALUE;
         for (long i = Math.max(0, n - LOOKBACK_OUTPUTS); i < n; i++) {
             OutputRecord o = l1.output(i);
             byStatus[o.status().ordinal()]++;
@@ -133,6 +134,7 @@ public final class BridgeCollector {
                 minRemaining = Math.min(minRemaining, remaining);
                 if (challengerStore != null && !challengerStore.isChecked(i, o.withdrawalRoot())) {
                     unchecked++;
+                    minUncheckedRemaining = Math.min(minUncheckedRemaining, remaining);
                 }
             }
         }
@@ -150,10 +152,19 @@ public final class BridgeCollector {
         } else {
             remainingGauge.remove();
         }
+        m.gauge("bridge_challenge_window_seconds", "Challenge window configured on the OutputOracle.").set(window);
         if (challengerStore != null) {
             m.gauge("bridge_challenger_unchecked_outputs",
                             "Open outputs this challenger has not verified yet.")
                     .set(unchecked);
+            var uncheckedRemaining = m.gauge(
+                    "bridge_unchecked_output_min_window_remaining_seconds",
+                    "Seconds left in the challenge window of the open output the challenger has NOT verified that is closest to finalizing (absent when none).");
+            if (unchecked > 0) {
+                uncheckedRemaining.set(minUncheckedRemaining);
+            } else {
+                uncheckedRemaining.remove();
+            }
         }
         m.gauge("bridge_l1_paused", "1 if the L1 bridge is paused.").set(l1.isPaused() ? 1 : 0);
     }
