@@ -32,7 +32,8 @@ import org.slf4j.LoggerFactory;
  */
 public final class WithdrawalRelayer implements Service {
     private static final Logger LOG = LoggerFactory.getLogger(WithdrawalRelayer.class);
-    private static final String CURSOR = "withdrawal.l2ScannedUpTo";
+    /** Name of the persisted L2 scan cursor (also read by the metrics collector to compute the lag). */
+    public static final String CURSOR = "withdrawal.l2ScannedUpTo";
     private static final String FINALIZED_TOPIC =
             Hex.encode(Keccak256.hash("WithdrawalFinalized(bytes32,address,uint256,bool)"));
 

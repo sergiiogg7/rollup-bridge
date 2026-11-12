@@ -1,6 +1,7 @@
 package dev.rollupbridge.services;
 
 import dev.rollupbridge.core.Bytes32;
+import dev.rollupbridge.core.metrics.MetricsRegistry;
 import dev.rollupbridge.core.model.DepositEvent;
 import dev.rollupbridge.core.model.TxResult;
 import dev.rollupbridge.core.port.BridgeStore;
@@ -10,8 +11,13 @@ import dev.rollupbridge.core.port.L2Reader;
 import dev.rollupbridge.core.port.L2Writer;
 import dev.rollupbridge.core.state.DepositRecord;
 import dev.rollupbridge.core.state.DepositState;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
@@ -37,7 +43,8 @@ import org.slf4j.LoggerFactory;
  */
 public final class DepositRelayer implements Service {
     private static final Logger LOG = LoggerFactory.getLogger(DepositRelayer.class);
-    private static final String CURSOR = "deposit.scannedUpTo";
+    /** Name of the persisted scan cursor (also read by the metrics collector to compute the lag). */
+    public static final String CURSOR = "deposit.scannedUpTo";
 
     /** @param confirmations required depth (head - block); @param startBlock first L1 block to scan; @param rescanDepth blocks re-read each tick to notice reorgs */
     public record Config(long confirmations, long startBlock, long rescanDepth) {}
@@ -48,12 +55,29 @@ public final class DepositRelayer implements Service {
     private final BridgeStore store;
     private final Config config;
 
+    private final MetricsRegistry metrics;
+    /** First time THIS process saw a deposit still in flight; used for latency and age (lost on restart, by design). */
+    private final Map<Long, Instant> firstSeen = new HashMap<>();
+
     public DepositRelayer(L1Reader l1, L2Reader l2, L2Writer l2Writer, BridgeStore store, Config config) {
+        this(l1, l2, l2Writer, store, config, new MetricsRegistry());
+    }
+
+    public DepositRelayer(
+            L1Reader l1, L2Reader l2, L2Writer l2Writer, BridgeStore store, Config config, MetricsRegistry metrics) {
         this.l1 = l1;
         this.l2 = l2;
         this.l2Writer = l2Writer;
         this.store = store;
         this.config = config;
+        this.metrics = metrics;
+        metrics.histogram(
+                "bridge_deposit_latency_seconds",
+                "Seconds from the relayer first seeing a deposit to its mint on L2 (deposits seen by this process only).",
+                1, 2, 5, 10, 30, 60, 120, 300, 600);
+        metrics.gauge(
+                "bridge_deposit_oldest_pending_age_seconds",
+                "Age of the oldest deposit that is not Done or Dropped (0 when none), measured from first sight by this process.");
     }
 
     @Override
@@ -68,6 +92,33 @@ public final class DepositRelayer implements Service {
         for (DepositRecord rec : store.activeDeposits()) {
             advance(rec, head);
         }
+        observe();
+    }
+
+    /** Publishes latency (on completion) and the age of the oldest pending deposit. */
+    private void observe() {
+        Instant now = metrics.clock().instant();
+        Instant oldest = null;
+        for (DepositRecord rec : store.activeDeposits()) {
+            Instant seen = firstSeen.computeIfAbsent(rec.id(), id -> now);
+            if (oldest == null || seen.isBefore(oldest)) {
+                oldest = seen;
+            }
+        }
+        metrics.gauge("bridge_deposit_oldest_pending_age_seconds", "")
+                .set(oldest == null ? 0 : Duration.between(oldest, now).toMillis() / 1000.0);
+        var finished = new ArrayList<Long>();
+        for (var entry : firstSeen.entrySet()) {
+            Optional<DepositRecord> rec = store.deposit(entry.getKey());
+            if (rec.isPresent() && rec.get().state() instanceof DepositState.Done) {
+                metrics.histogram("bridge_deposit_latency_seconds", "")
+                        .observe(Duration.between(entry.getValue(), now).toMillis() / 1000.0);
+                finished.add(entry.getKey());
+            } else if (rec.isEmpty() || rec.get().state() instanceof DepositState.Dropped) {
+                finished.add(entry.getKey());
+            }
+        }
+        finished.forEach(firstSeen::remove);
     }
 
     /** Reads recent logs (re-reading a window behind the cursor) and reconciles them with the store. */
@@ -81,6 +132,7 @@ public final class DepositRelayer implements Service {
             Optional<DepositRecord> existing = store.deposit(e.depositId());
             if (existing.isEmpty()) {
                 LOG.info("[deposit-relayer] new deposit #{} {} wei -> {} in L1 block {}", e.depositId(), e.amount(), e.to(), e.l1Block());
+                firstSeen.putIfAbsent(e.depositId(), metrics.clock().instant());
                 store.saveDeposit(new DepositRecord(
                         e.depositId(), e.to(), e.amount(), e.l1Block(), e.l1BlockHash(), new DepositState.Seen()));
                 continue;
