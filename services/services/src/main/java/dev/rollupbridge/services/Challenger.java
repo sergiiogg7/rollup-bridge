@@ -60,7 +60,8 @@ public final class Challenger implements Service {
                     try {
                         l1Writer.challengeOutput(i);
                         LOG.warn("[challenger] challenged output #{}", i);
-                        store.markChecked(i, o.withdrawalRoot());
+                        // Deliberately NOT marked as checked: the chain (status Challenged) is the record. If an L1 reorg removes
+                        // the challenge transaction the output is Proposed again and must be challenged again.
                     } catch (GatewayException e) {
                         LOG.warn("[challenger] challenge of output #{} failed: {}", i, e.getMessage());
                     }
